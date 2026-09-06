@@ -1,0 +1,14 @@
+/target/
+examples/*/target/
+examples/*/ebasic.lock
+*.gen.cpp
+*.gen.obj
+
+# host/ is a real msbuild C++/WinRT project - its own build outputs,
+# not ebc/ebpm's.
+host/x64/
+host/eb_winui3_host/
+host/obj/
+host/Debug/
+host/Release/
+host/*.user

@@ -1,0 +1,10 @@
+[package]
+name = "hello_winui"
+version = "0.1.0"
+
+[bin]
+name = "hello_winui"
+path = "src/main.bas"
+
+[dependencies]
+winui = { path = "../.." }
