@@ -81,18 +81,61 @@ namespace winrt::smoke::implementation
     // real, verifiable acknowledgement a launching eBasic program can
     // wait for, since there's no way to visually confirm a native window
     // updated from outside the process.
+    // Splits "<first token> <rest of line>" - `rest` is "" (not, say,
+    // missing) when there's no space at all, matching this file's own
+    // established one-space-delimited, ZSTRING-style parsing convention.
+    static void SplitFirstWord(std::wstring const& s, std::wstring& first, std::wstring& rest)
+    {
+        size_t sp = s.find(L' ');
+        first = sp == std::wstring::npos ? s : s.substr(0, sp);
+        rest = sp == std::wstring::npos ? L"" : s.substr(sp + 1);
+    }
+
     void MainWindow::HandleCommandOnUiThread(std::wstring line)
     {
         auto self = this;
         DispatcherQueue().TryEnqueue([self, line]() {
-            size_t sp = line.find(L' ');
-            std::wstring cmd = sp == std::wstring::npos ? line : line.substr(0, sp);
-            std::wstring arg = sp == std::wstring::npos ? L"" : line.substr(sp + 1);
+            std::wstring cmd, arg;
+            SplitFirstWord(line, cmd, arg);
 
             if (cmd == L"SETTEXT") {
                 self->myText().Text(arg);
             } else if (cmd == L"SETTITLE") {
                 self->Title(arg);
+            } else if (cmd == L"ADD") {
+                // "ADD BUTTON <id> <text>" / "ADD TEXTBLOCK <id> <text>" -
+                // <id> is one whitespace-free token (matches every other
+                // command's own "no escaping" limitation, see
+                // SETTEXT/SETTITLE), <text> runs to the end of the line.
+                std::wstring widgetType, rest, id, text;
+                SplitFirstWord(arg, widgetType, rest);
+                SplitFirstWord(rest, id, text);
+
+                // Constructed purely in code (no XAML needed for this -
+                // real, documented C++/WinRT: a Panel's own Children is a
+                // live IVector<UIElement>, Append() adds it to the visual
+                // tree immediately). No id -> control lookup table is kept
+                // - nothing needs to look a dynamic widget back up by id
+                // yet (that's an update-by-id capability deliberately
+                // deferred to a later round); the Click lambda below only
+                // needs `id` captured in its own closure.
+                if (widgetType == L"BUTTON") {
+                    Microsoft::UI::Xaml::Controls::Button btn;
+                    btn.Content(box_value(text));
+                    btn.Click([id](IInspectable const&, RoutedEventArgs const&) {
+                        wprintf(L"CLICKED %s\n", id.c_str());
+                        fflush(stdout);
+                    });
+                    self->rootPanel().Children().Append(btn);
+                } else if (widgetType == L"TEXTBLOCK") {
+                    Microsoft::UI::Xaml::Controls::TextBlock tb;
+                    tb.Text(text);
+                    self->rootPanel().Children().Append(tb);
+                } else {
+                    wprintf(L"ERR unknown widget type: %s\n", line.c_str());
+                    fflush(stdout);
+                    return;
+                }
             } else if (cmd == L"QUIT") {
                 wprintf(L"OK %s\n", line.c_str());
                 fflush(stdout);

@@ -186,6 +186,39 @@ FUNCTION WinUIHostSetTitle(h AS WinUIHost, title AS ZSTRING) AS ZSTRING
     WinUIHostSetTitle = winuiScratch
 END FUNCTION
 
+''' Creates a new Button in the host window, below every existing
+''' widget (real WinUI3: `Panel.Children.Append` - see host/
+''' MainWindow.xaml.cpp's own comment). `id` is echoed back via
+''' `WinUIHostReadEvent` as `CLICKED <id>` on every click of this
+''' specific button, for as long as the host process runs - `id` must
+''' be one whitespace-free token (same "no escaping" limitation as
+''' `SETTEXT`/`SETTITLE`'s own `<text>`). Same "OK "-prefixed
+''' acknowledgement contract as WinUIHostSetText - there is no way to
+''' update or remove a widget once added, this round (see README.md's
+''' "out of scope for now").
+FUNCTION WinUIHostAddButton(h AS WinUIHost, id AS ZSTRING, text AS ZSTRING) AS ZSTRING
+    DIM idStr AS STRING
+    idStr = id
+    DIM textStr AS STRING
+    textStr = text
+    CALL WinUIHostSendCommand(h, "ADD BUTTON " & idStr & " " & textStr)
+    winuiScratch = WinUIReadLine(h)
+    WinUIHostAddButton = winuiScratch
+END FUNCTION
+
+''' Creates a new, static TextBlock in the host window - same shape as
+''' WinUIHostAddButton, but a TextBlock never itself generates a
+''' `CLICKED` event.
+FUNCTION WinUIHostAddTextBlock(h AS WinUIHost, id AS ZSTRING, text AS ZSTRING) AS ZSTRING
+    DIM idStr AS STRING
+    idStr = id
+    DIM textStr AS STRING
+    textStr = text
+    CALL WinUIHostSendCommand(h, "ADD TEXTBLOCK " & idStr & " " & textStr)
+    winuiScratch = WinUIReadLine(h)
+    WinUIHostAddTextBlock = winuiScratch
+END FUNCTION
+
 ''' Asks the host to close its window and exit, blocks for its final
 ''' acknowledgement, then releases this side's own pipe/process handles.
 ''' Safe to call even if the host already exited on its own (a closed

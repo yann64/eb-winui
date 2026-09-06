@@ -46,5 +46,27 @@ IF Left(ack, 3) <> "OK " THEN
     CALL ExitProcess(1)
 END IF
 
+' Round 2: dynamic widgets. There's still no way for this session to
+' perform a real click - verified the same way SETTEXT/SETTITLE are
+' above (a real "OK ADD ..." acknowledgement, only written back once
+' the widget actually exists in the live visual tree); a real click
+' round trip (WinUIHostReadEvent seeing "CLICKED btn1") needs a human
+' at the keyboard, or a future round's own automation.
+ack = WinUIHostAddButton(host, "btn1", "Dynamic Button")
+PRINT ack
+IF Left(ack, 3) <> "OK " THEN
+    PRINT "FAIL: ADD BUTTON was not acknowledged"
+    CALL WinUIHostClose(host)
+    CALL ExitProcess(1)
+END IF
+
+ack = WinUIHostAddTextBlock(host, "tb1", "Added dynamically from eBasic")
+PRINT ack
+IF Left(ack, 3) <> "OK " THEN
+    PRINT "FAIL: ADD TEXTBLOCK was not acknowledged"
+    CALL WinUIHostClose(host)
+    CALL ExitProcess(1)
+END IF
+
 CALL WinUIHostClose(host)
 PRINT "Host closed. Round trip OK."
