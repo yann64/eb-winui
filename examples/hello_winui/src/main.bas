@@ -52,7 +52,7 @@ END IF
 ' the widget actually exists in the live visual tree); a real click
 ' round trip (WinUIHostReadEvent seeing "CLICKED btn1") needs a human
 ' at the keyboard, or a future round's own automation.
-ack = WinUIHostAddButton(host, "btn1", "Dynamic Button")
+ack = WinUIHostAddButton(host, "btn1", "Dynamic Button", "ROOT")
 PRINT ack
 IF Left(ack, 3) <> "OK " THEN
     PRINT "FAIL: ADD BUTTON was not acknowledged"
@@ -60,10 +60,54 @@ IF Left(ack, 3) <> "OK " THEN
     CALL ExitProcess(1)
 END IF
 
-ack = WinUIHostAddTextBlock(host, "tb1", "Added dynamically from eBasic")
+ack = WinUIHostAddTextBlock(host, "tb1", "Added dynamically from eBasic", "ROOT")
 PRINT ack
 IF Left(ack, 3) <> "OK " THEN
     PRINT "FAIL: ADD TEXTBLOCK was not acknowledged"
+    CALL WinUIHostClose(host)
+    CALL ExitProcess(1)
+END IF
+
+' Round 3: update/remove by id, and a nested container - a real,
+' verifiable proof each of these actually reaches the live widget, not
+' just "some command got acknowledged."
+ack = WinUIHostSet(host, "btn1", "Renamed via WinUIHostSet")
+PRINT ack
+IF Left(ack, 3) <> "OK " THEN
+    PRINT "FAIL: SET was not acknowledged"
+    CALL WinUIHostClose(host)
+    CALL ExitProcess(1)
+END IF
+
+ack = WinUIHostRemove(host, "tb1")
+PRINT ack
+IF Left(ack, 3) <> "OK " THEN
+    PRINT "FAIL: REMOVE was not acknowledged"
+    CALL WinUIHostClose(host)
+    CALL ExitProcess(1)
+END IF
+
+ack = WinUIHostAddStackPanel(host, "panel1", "HORIZONTAL", "ROOT")
+PRINT ack
+IF Left(ack, 3) <> "OK " THEN
+    PRINT "FAIL: ADD STACKPANEL was not acknowledged"
+    CALL WinUIHostClose(host)
+    CALL ExitProcess(1)
+END IF
+
+ack = WinUIHostAddButton(host, "nested1", "Inside panel1", "panel1")
+PRINT ack
+IF Left(ack, 3) <> "OK " THEN
+    PRINT "FAIL: nested ADD BUTTON was not acknowledged"
+    CALL WinUIHostClose(host)
+    CALL ExitProcess(1)
+END IF
+
+' A real, checked error case too - not just the happy path.
+ack = WinUIHostSet(host, "does-not-exist", "irrelevant")
+PRINT ack
+IF Left(ack, 4) <> "ERR " THEN
+    PRINT "FAIL: SET on an unknown id should have been rejected"
     CALL WinUIHostClose(host)
     CALL ExitProcess(1)
 END IF

@@ -186,37 +186,88 @@ FUNCTION WinUIHostSetTitle(h AS WinUIHost, title AS ZSTRING) AS ZSTRING
     WinUIHostSetTitle = winuiScratch
 END FUNCTION
 
-''' Creates a new Button in the host window, below every existing
-''' widget (real WinUI3: `Panel.Children.Append` - see host/
-''' MainWindow.xaml.cpp's own comment). `id` is echoed back via
-''' `WinUIHostReadEvent` as `CLICKED <id>` on every click of this
-''' specific button, for as long as the host process runs - `id` must
-''' be one whitespace-free token (same "no escaping" limitation as
+''' Creates a new Button, appended below every existing widget in
+''' `parentId` (real WinUI3: `Panel.Children.Append` - see host/
+''' MainWindow.xaml.cpp's own comment) - `parentId` defaults to `"ROOT"`,
+''' the original top-level window body, so a caller not using containers
+''' never needs to pass it. `id` is echoed back via `WinUIHostReadEvent`
+''' as `CLICKED <id>` on every click of this specific button, for as
+''' long as the host process runs - `id`/`parentId` must each be one
+''' whitespace-free token (same "no escaping" limitation as
 ''' `SETTEXT`/`SETTITLE`'s own `<text>`). Same "OK "-prefixed
-''' acknowledgement contract as WinUIHostSetText - there is no way to
-''' update or remove a widget once added, this round (see README.md's
-''' "out of scope for now").
-FUNCTION WinUIHostAddButton(h AS WinUIHost, id AS ZSTRING, text AS ZSTRING) AS ZSTRING
+''' acknowledgement contract as WinUIHostSetText.
+FUNCTION WinUIHostAddButton(h AS WinUIHost, id AS ZSTRING, text AS ZSTRING, parentId AS ZSTRING = "ROOT") AS ZSTRING
     DIM idStr AS STRING
     idStr = id
     DIM textStr AS STRING
     textStr = text
-    CALL WinUIHostSendCommand(h, "ADD BUTTON " & idStr & " " & textStr)
+    DIM parentIdStr AS STRING
+    parentIdStr = parentId
+    CALL WinUIHostSendCommand(h, "ADD BUTTON " & idStr & " " & parentIdStr & " " & textStr)
     winuiScratch = WinUIReadLine(h)
     WinUIHostAddButton = winuiScratch
 END FUNCTION
 
-''' Creates a new, static TextBlock in the host window - same shape as
-''' WinUIHostAddButton, but a TextBlock never itself generates a
-''' `CLICKED` event.
-FUNCTION WinUIHostAddTextBlock(h AS WinUIHost, id AS ZSTRING, text AS ZSTRING) AS ZSTRING
+''' Creates a new, static TextBlock - same shape as WinUIHostAddButton
+''' (including the defaulted `parentId`), but a TextBlock never itself
+''' generates a `CLICKED` event.
+FUNCTION WinUIHostAddTextBlock(h AS WinUIHost, id AS ZSTRING, text AS ZSTRING, parentId AS ZSTRING = "ROOT") AS ZSTRING
     DIM idStr AS STRING
     idStr = id
     DIM textStr AS STRING
     textStr = text
-    CALL WinUIHostSendCommand(h, "ADD TEXTBLOCK " & idStr & " " & textStr)
+    DIM parentIdStr AS STRING
+    parentIdStr = parentId
+    CALL WinUIHostSendCommand(h, "ADD TEXTBLOCK " & idStr & " " & parentIdStr & " " & textStr)
     winuiScratch = WinUIReadLine(h)
     WinUIHostAddTextBlock = winuiScratch
+END FUNCTION
+
+''' Creates a new StackPanel container - other widgets can target it as
+''' their own `parentId` afterward. `orientation` is `"HORIZONTAL"` or
+''' `"VERTICAL"` (anything else is treated as vertical by the host - see
+''' host/MainWindow.xaml.cpp's own comment).
+FUNCTION WinUIHostAddStackPanel(h AS WinUIHost, id AS ZSTRING, orientation AS ZSTRING, parentId AS ZSTRING = "ROOT") AS ZSTRING
+    DIM idStr AS STRING
+    idStr = id
+    DIM orientationStr AS STRING
+    orientationStr = orientation
+    DIM parentIdStr AS STRING
+    parentIdStr = parentId
+    CALL WinUIHostSendCommand(h, "ADD STACKPANEL " & idStr & " " & parentIdStr & " " & orientationStr)
+    winuiScratch = WinUIReadLine(h)
+    WinUIHostAddStackPanel = winuiScratch
+END FUNCTION
+
+''' Updates a previously-`WinUIHostAdd*`-ed widget's own text (a
+''' Button's `Content` or a TextBlock's `Text`, whichever `id` really
+''' is) - never the original, static `TextBlock`/window title, which
+''' stay `WinUIHostSetText`/`SetTitle`'s own job (deliberately not
+''' overloaded together - see host/MainWindow.xaml.cpp's own note on
+''' why). Same "OK "-prefixed acknowledgement contract, `"ERR unknown
+''' id: ..."` if `id` doesn't exist.
+FUNCTION WinUIHostSet(h AS WinUIHost, id AS ZSTRING, text AS ZSTRING) AS ZSTRING
+    DIM idStr AS STRING
+    idStr = id
+    DIM textStr AS STRING
+    textStr = text
+    CALL WinUIHostSendCommand(h, "SET " & idStr & " " & textStr)
+    winuiScratch = WinUIReadLine(h)
+    WinUIHostSet = winuiScratch
+END FUNCTION
+
+''' Removes a previously-`WinUIHostAdd*`-ed widget (and, if it was a
+''' container, every widget still inside it stays a live WinRT object
+''' but is no longer reachable via any `id` - a real, accepted
+''' limitation, not a leak in the sense that matters: the whole process
+''' exits with the window regardless). `"ERR unknown id: ..."` if `id`
+''' doesn't exist.
+FUNCTION WinUIHostRemove(h AS WinUIHost, id AS ZSTRING) AS ZSTRING
+    DIM idStr AS STRING
+    idStr = id
+    CALL WinUIHostSendCommand(h, "REMOVE " & idStr)
+    winuiScratch = WinUIReadLine(h)
+    WinUIHostRemove = winuiScratch
 END FUNCTION
 
 ''' Asks the host to close its window and exit, blocks for its final

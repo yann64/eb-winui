@@ -91,6 +91,24 @@ namespace winrt::smoke::implementation
         rest = sp == std::wstring::npos ? L"" : s.substr(sp + 1);
     }
 
+    // "ROOT" (the reserved sentinel every command's own <parentId> can
+    // pass for the common case) resolves directly to rootPanel(); any
+    // other id is looked up in m_widgets and must itself be a Panel
+    // (StackPanel/Grid both satisfy this) - a plain Button/TextBlock id
+    // passed as a parentId is a real, reported error, not a silent
+    // no-op. Returns nullptr on any failure to resolve.
+    Controls::Panel MainWindow::ResolveParentPanel(std::wstring const& parentId)
+    {
+        if (parentId == L"ROOT") {
+            return rootPanel();
+        }
+        auto it = m_widgets.find(parentId);
+        if (it == m_widgets.end()) {
+            return nullptr;
+        }
+        return it->second.element.try_as<Controls::Panel>();
+    }
+
     void MainWindow::HandleCommandOnUiThread(std::wstring line)
     {
         auto self = this;
@@ -102,35 +120,101 @@ namespace winrt::smoke::implementation
                 self->myText().Text(arg);
             } else if (cmd == L"SETTITLE") {
                 self->Title(arg);
+            } else if (cmd == L"SET") {
+                // "SET <id> <text>" - updates a PREVIOUSLY-ADDed widget by
+                // id (never the original myText/myButton - those stay
+                // SETTEXT/SETTITLE's own job, see README's own note on
+                // why the two aren't overloaded together). try_as is the
+                // real, idiomatic WinRT cast (a QueryInterface-shaped
+                // check, empty on mismatch rather than throwing) - needed
+                // because Content/Text live on the concrete Button/
+                // TextBlock types, not on the common UIElement this file
+                // stores every widget as.
+                std::wstring id, text;
+                SplitFirstWord(arg, id, text);
+                auto it = self->m_widgets.find(id);
+                if (it == self->m_widgets.end()) {
+                    wprintf(L"ERR unknown id: %s\n", line.c_str());
+                    fflush(stdout);
+                    return;
+                }
+                if (auto btn = it->second.element.try_as<Controls::Button>()) {
+                    btn.Content(box_value(text));
+                } else if (auto tb = it->second.element.try_as<Controls::TextBlock>()) {
+                    tb.Text(text);
+                } else {
+                    wprintf(L"ERR cannot SET this widget type: %s\n", line.c_str());
+                    fflush(stdout);
+                    return;
+                }
+            } else if (cmd == L"REMOVE") {
+                // "REMOVE <id>" - IVector<UIElement> (Panel::Children's
+                // own real type) has no direct Remove(item) - IndexOf
+                // (using the stored UIElement to find the real, current
+                // index) then RemoveAt is the real, confirmed pattern.
+                std::wstring const& id = arg;
+                auto it = self->m_widgets.find(id);
+                if (it == self->m_widgets.end()) {
+                    wprintf(L"ERR unknown id: %s\n", line.c_str());
+                    fflush(stdout);
+                    return;
+                }
+                uint32_t index;
+                if (it->second.parent && it->second.parent.Children().IndexOf(it->second.element, index)) {
+                    it->second.parent.Children().RemoveAt(index);
+                }
+                self->m_widgets.erase(it);
             } else if (cmd == L"ADD") {
-                // "ADD BUTTON <id> <text>" / "ADD TEXTBLOCK <id> <text>" -
-                // <id> is one whitespace-free token (matches every other
-                // command's own "no escaping" limitation, see
-                // SETTEXT/SETTITLE), <text> runs to the end of the line.
-                std::wstring widgetType, rest, id, text;
-                SplitFirstWord(arg, widgetType, rest);
-                SplitFirstWord(rest, id, text);
+                // "ADD BUTTON <id> <parentId> <text>" /
+                // "ADD TEXTBLOCK <id> <parentId> <text>" /
+                // "ADD STACKPANEL <id> <parentId> <orientation>" -
+                // <id>/<parentId> are one whitespace-free token each
+                // (matches every other command's own "no escaping"
+                // limitation), the trailing token runs to the end of the
+                // line. <parentId> "ROOT" means the original top-level
+                // rootPanel - see ResolveParentPanel above.
+                std::wstring widgetType, rest1, id, rest2, parentId, text;
+                SplitFirstWord(arg, widgetType, rest1);
+                SplitFirstWord(rest1, id, rest2);
+                SplitFirstWord(rest2, parentId, text);
 
-                // Constructed purely in code (no XAML needed for this -
-                // real, documented C++/WinRT: a Panel's own Children is a
-                // live IVector<UIElement>, Append() adds it to the visual
-                // tree immediately). No id -> control lookup table is kept
-                // - nothing needs to look a dynamic widget back up by id
-                // yet (that's an update-by-id capability deliberately
-                // deferred to a later round); the Click lambda below only
-                // needs `id` captured in its own closure.
+                Controls::Panel parentPanel = self->ResolveParentPanel(parentId);
+                if (!parentPanel) {
+                    wprintf(L"ERR unknown parent id: %s\n", line.c_str());
+                    fflush(stdout);
+                    return;
+                }
+
+                // Every widget kind is constructed purely in code (no
+                // XAML needed - real, documented C++/WinRT: a Panel's own
+                // Children is a live IVector<UIElement>, Append() adds it
+                // to the visual tree immediately) and registered in
+                // m_widgets under its own parent/element pair, so a later
+                // SET/REMOVE/ADD-as-parent can find it again.
                 if (widgetType == L"BUTTON") {
-                    Microsoft::UI::Xaml::Controls::Button btn;
+                    Controls::Button btn;
                     btn.Content(box_value(text));
                     btn.Click([id](IInspectable const&, RoutedEventArgs const&) {
                         wprintf(L"CLICKED %s\n", id.c_str());
                         fflush(stdout);
                     });
-                    self->rootPanel().Children().Append(btn);
+                    parentPanel.Children().Append(btn);
+                    self->m_widgets[id] = WidgetEntry{ parentPanel, btn };
                 } else if (widgetType == L"TEXTBLOCK") {
-                    Microsoft::UI::Xaml::Controls::TextBlock tb;
+                    Controls::TextBlock tb;
                     tb.Text(text);
-                    self->rootPanel().Children().Append(tb);
+                    parentPanel.Children().Append(tb);
+                    self->m_widgets[id] = WidgetEntry{ parentPanel, tb };
+                } else if (widgetType == L"STACKPANEL") {
+                    // `text` holds the orientation token here, not
+                    // display text - real Controls::StackPanel/Grid are
+                    // both real, default-constructible, nestable exactly
+                    // like Button/TextBlock (WinUI3 has an actual native
+                    // layout engine, unlike Win32).
+                    Controls::StackPanel sp;
+                    sp.Orientation(text == L"HORIZONTAL" ? Controls::Orientation::Horizontal : Controls::Orientation::Vertical);
+                    parentPanel.Children().Append(sp);
+                    self->m_widgets[id] = WidgetEntry{ parentPanel, sp };
                 } else {
                     wprintf(L"ERR unknown widget type: %s\n", line.c_str());
                     fflush(stdout);

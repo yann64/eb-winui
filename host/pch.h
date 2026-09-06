@@ -16,3 +16,7 @@
 #include <thread>
 #include <string>
 #include <cstdio>
+
+// eb-winui: the id -> widget lookup table SET/REMOVE/ADD <container>
+// need (MainWindow.xaml.cpp).
+#include <unordered_map>
